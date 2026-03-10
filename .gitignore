@@ -9,3 +9,4 @@ dist/
 coverage/
 .vitest/
 test-results/
+package-lock.json
