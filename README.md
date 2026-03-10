@@ -1,26 +1,50 @@
 # notion-cli-agent
 
-> The most powerful command-line interface for Notion — built for humans AND AI agents.
+> The most powerful command-line interface for Notion — built for AI agents first, humans too.
 
 [![npm version](https://img.shields.io/npm/v/notion-cli-agent.svg)](https://www.npmjs.com/package/notion-cli-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Instead of basic CRUD operations, **notion-cli-agent** goes further with AI-native features, Obsidian integration, smart queries, bulk operations, validation, and more — everything an AI agent (or power user) needs to fully manage Notion from the terminal.
+notion-cli-agent is designed to be used by AI agents that need to read and write Notion workspaces — natural language queries, batch operations, `--llm` output mode, workspace introspection, and more. Works great for humans too.
 
-## 🚀 Quick Start for AI Agents
+---
+
+## 🤖 For AI Agents
+
+### Quick start
 
 ```bash
-# Install
 npm install -g notion-cli-agent
-
-# Set your token
 export NOTION_TOKEN="ntn_your_token_here"
 
-# Get the full quick reference guide
+# Full quick reference (read this first)
 notion quickstart
 ```
 
-The `quickstart` command outputs a complete guide with all common operations, examples, and tips — perfect for AI agents to learn the CLI instantly.
+### Agent Skills (recommended)
+
+This repo ships [AgentSkills](https://agentskills.dev)-compatible skill files in the [`skills/`](./skills/) directory. Skills use **progressive disclosure**: the core `SKILL.md` is small enough to live in your agent's context window, and detailed reference files (`filters.md`, `batch-patterns.md`, `workflows.md`) are loaded on demand.
+
+```
+skills/
+├── notion-onboarding/    ← run first: maps your workspace to a state file
+└── notion-cli-agent/     ← core CLI skill + references
+```
+
+**Recommended setup for agents:**
+
+1. Install skills in your agent framework (see [`skills/README.md`](./skills/README.md))
+2. Run the **`notion-onboarding`** skill once — it discovers your databases (tasks, projects, OKRs, home page) and saves them to `~/.config/notion/workspace.json`
+3. All subsequent tasks use the mapped IDs automatically — no more looking up database IDs
+
+### Why a CLI over the Notion MCP/API?
+
+- **`--llm` mode** — compact, structured output optimized for agent consumption
+- **`notion find`** — natural language → Notion filters in one command
+- **`notion batch`** — multiple operations in a single shell call (minimize tool calls)
+- **`notion ai prompt`** — generates a database-specific prompt for the agent
+- **`notion inspect context`** — full schema + examples + command reference in one shot
+- No rate-limit boilerplate, no SDK setup, shell-composable
 
 ---
 
@@ -672,6 +696,51 @@ notion db query <db_id> \
 | **Inspect** | `inspect workspace`, `inspect schema`, `inspect context` |
 | **Batch** | `batch` |
 | **API** | `api` |
+
+---
+
+## 📦 Agent Skills
+
+The [`skills/`](./skills/) directory contains [AgentSkills](https://agentskills.dev)-compatible packages for use with OpenClaw, Claude Code, Cursor, and other agent frameworks.
+
+### Structure
+
+```
+skills/
+├── README.md                               # Installation & overview
+├── notion-onboarding/
+│   ├── SKILL.md                            # Workspace discovery workflow
+│   └── references/
+│       └── state-schema.md                 # ~/.config/notion/workspace.json schema
+└── notion-cli-agent/
+    ├── SKILL.md                            # Core CLI usage
+    └── references/
+        ├── filters.md                      # Property types × filter operators
+        ├── batch-patterns.md               # Multi-op batch patterns
+        └── workflows.md                    # Agent workflow recipes
+```
+
+### Progressive disclosure
+
+Skills load in three layers to keep context usage efficient:
+
+| Layer | Content | When loaded |
+|-------|---------|-------------|
+| Metadata | `name` + `description` | Always — triggers the skill |
+| Core | `SKILL.md` body | When skill activates |
+| Reference | `references/*.md` | On demand, as needed |
+
+The main `SKILL.md` for each skill is kept under 150 lines. Deep reference material lives in separate files that the agent reads only when that topic comes up.
+
+### Installation
+
+```bash
+# OpenClaw
+cp -r skills/notion-cli-agent ~/.local/share/openclaw/skills/
+cp -r skills/notion-onboarding ~/.local/share/openclaw/skills/
+
+# See skills/README.md for other frameworks
+```
 
 ---
 
