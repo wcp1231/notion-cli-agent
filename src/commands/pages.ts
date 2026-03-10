@@ -95,8 +95,9 @@ export function registerPagesCommand(program: Command): void {
             }
           }
           
-          // Use detected name or fall back to common names
-          titlePropName = titlePropName || 'Name';
+          // Use detected name or fall back based on parent type
+          // Non-DB pages (page/workspace parent) use 'title'; DB pages default to 'Name'
+          titlePropName = titlePropName || (options.parentType === 'page' ? 'title' : 'Name');
           properties[titlePropName] = {
             title: [{ text: { content: options.title } }],
           };
@@ -161,12 +162,14 @@ export function registerPagesCommand(program: Command): void {
         if (options.title) {
           let titlePropName = options.titleProp;
 
+          let parentIsDatabase = false;
           if (!titlePropName) {
             try {
               const page = await client.get(`pages/${pageId}`) as {
                 parent: { type: string; database_id?: string };
               };
               if (page.parent.type === 'database_id' && page.parent.database_id) {
+                parentIsDatabase = true;
                 const db = await client.get(`databases/${page.parent.database_id}`) as {
                   properties: Record<string, { type: string }>;
                 };
@@ -182,7 +185,8 @@ export function registerPagesCommand(program: Command): void {
             }
           }
 
-          titlePropName = titlePropName || 'Name';
+          // Non-DB pages (page/workspace parent) use 'title'; DB pages default to 'Name'
+          titlePropName = titlePropName || (parentIsDatabase ? 'Name' : 'title');
           properties[titlePropName] = {
             title: [{ text: { content: options.title } }],
           };
