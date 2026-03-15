@@ -78,6 +78,6 @@ cat skills/notion-cli-agent/references/filters.md
 ## Recommended first-run
 
 1. Install the CLI: `npm install -g notion-cli-agent`
-2. Set token: `export NOTION_TOKEN="ntn_..."`
+2. Set token: `echo "ntn_..." > ~/.config/notion/api_key` (or `export NOTION_TOKEN="ntn_..."`)
 3. Run onboarding: tell your agent to use the `notion-onboarding` skill
 4. Start working: all subsequent Notion tasks use the mapped database IDs automatically

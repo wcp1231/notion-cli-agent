@@ -101,13 +101,13 @@ git clone https://github.com/Balneario-de-Cofrentes/notion-cli-agent.git
 cd notion-cli-agent
 
 # Install dependencies
-pnpm install
+bun install
 
 # Build
-pnpm build
+bun run build
 
 # Link globally
-pnpm link --global
+bun link
 ```
 
 ### Requirements
@@ -128,12 +128,18 @@ pnpm link --global
 ### 2. Set the token
 
 ```bash
-# Option 1: Environment variable (recommended)
+# Option 1: Config file (recommended for AI agents)
+mkdir -p ~/.config/notion
+echo "ntn_your_token_here" > ~/.config/notion/api_key
+
+# Option 2: Environment variable
 export NOTION_TOKEN="ntn_your_token_here"
 
-# Option 2: Pass directly
+# Option 3: Pass directly
 notion --token "ntn_xxx" search "query"
 ```
+
+Token resolution priority: `--token` flag > `NOTION_TOKEN` env > `NOTION_API_KEY` env > `~/.config/notion/api_key` file > `~/.notion/token` file.
 
 ### 3. Share content with your integration
 

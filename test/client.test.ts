@@ -437,7 +437,7 @@ describe('NotionClient', () => {
       const { getTokenSync } = await import('../src/client');
 
       expect(() => getTokenSync()).toThrow(
-        'Notion API token not found. Set NOTION_TOKEN env var or create ~/.config/notion/api_key'
+        'Notion API token not found.'
       );
       vi.doUnmock('fs');
     });

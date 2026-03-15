@@ -12,8 +12,10 @@ export function registerHelpAgentCommand(program: Command): void {
       console.log(`
 # notion-cli-agent Quick Reference for AI Agents
 
-## Setup
-Export your token: export NOTION_TOKEN="ntn_xxx"
+## Setup (choose one)
+1. Config file (recommended): echo "ntn_xxx" > ~/.config/notion/api_key
+2. Environment variable: export NOTION_TOKEN="ntn_xxx"
+3. Inline: notion --token "ntn_xxx" <command>
 
 ## Most Common Operations
 

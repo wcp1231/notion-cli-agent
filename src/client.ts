@@ -199,7 +199,11 @@ export function getTokenSync(): string {
   }
 
   throw new Error(
-    'Notion API token not found. Set NOTION_TOKEN env var or create ~/.config/notion/api_key'
+    'Notion API token not found.\n' +
+    'Set your token using one of these methods:\n' +
+    '  1. echo "ntn_xxx" > ~/.config/notion/api_key  (recommended)\n' +
+    '  2. export NOTION_TOKEN="ntn_xxx"\n' +
+    '  3. notion --token "ntn_xxx" <command>'
   );
 }
 

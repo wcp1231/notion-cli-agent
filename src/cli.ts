@@ -45,7 +45,7 @@ program
   .name('notion')
   .description('Full-featured CLI for Notion API - built for humans AND AI agents\n\n  💡 AI Agents: Run "notion quickstart" for a complete quick reference guide')
   .version('0.4.2')
-  .option('--token <token>', 'Notion API token (or set NOTION_TOKEN env var)')
+  .option('--token <token>', 'Notion API token (or set NOTION_TOKEN env var, or create ~/.config/notion/api_key)')
   .hook('preAction', (thisCommand) => {
     const opts = thisCommand.opts();
     try {
