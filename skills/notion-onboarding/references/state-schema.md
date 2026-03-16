@@ -6,7 +6,7 @@ File: `~/.config/notion/workspace.json`
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "onboardedAt": "2026-03-10",
   "updatedAt": "2026-03-10",
 
@@ -20,9 +20,10 @@ File: `~/.config/notion/workspace.json`
     "url": "https://notion.so/..."
   },
 
-  "databases": {
+  "dataSources": {
     "tasks": {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "databaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "title": "Tasks",
       "titleProp": "Name",
       "statusProp": "Status",
@@ -33,6 +34,7 @@ File: `~/.config/notion/workspace.json`
     },
     "projects": {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "databaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "title": "Projects",
       "titleProp": "Name",
       "statusProp": "Status",
@@ -40,6 +42,7 @@ File: `~/.config/notion/workspace.json`
     },
     "goals": {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "databaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "title": "OKRs Q1 2026",
       "titleProp": "Objective",
       "statusProp": "Status",
@@ -50,11 +53,13 @@ File: `~/.config/notion/workspace.json`
   "custom": {
     "crm": {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "databaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "title": "Contacts",
       "purpose": "CRM / client management"
     },
     "areas": {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "databaseId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "title": "Areas of Responsibility",
       "purpose": "Life areas / PARA system"
     }
@@ -66,21 +71,22 @@ File: `~/.config/notion/workspace.json`
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `version` | yes | Schema version, currently `1` |
+| `version` | yes | Schema version, currently `2` |
 | `onboardedAt` | yes | ISO date of initial setup |
 | `updatedAt` | yes | ISO date of last update |
 | `workspace.name` | yes | Notion workspace name |
-| `home` | no | Main dashboard page (not a database) |
-| `databases.tasks` | recommended | Day-to-day task tracking |
-| `databases.projects` | recommended | Project containers |
-| `databases.goals` | no | OKRs, objectives, goals |
-| `custom.*` | no | Any other key databases, keyed by short name |
+| `home` | no | Main dashboard page (not a data source) |
+| `dataSources.tasks` | recommended | Day-to-day task tracking |
+| `dataSources.projects` | recommended | Project containers |
+| `dataSources.goals` | no | OKRs, objectives, goals |
+| `custom.*` | no | Any other key data sources, keyed by short name |
 
-## Database entry fields
+## Data source entry fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `id` | yes | Notion database UUID |
+| `id` | yes | Notion data source UUID |
+| `databaseId` | no | Parent database UUID (if different from data source ID) |
 | `title` | yes | Human display name |
 | `titleProp` | yes | Exact name of the `title` type property |
 | `statusProp` | no | Exact name of the status/select property |
@@ -97,8 +103,8 @@ When starting any Notion task:
 # Load state
 STATE=$(cat ~/.config/notion/workspace.json 2>/dev/null)
 
-# Extract task DB id (example using jq)
-TASKS_DB=$(echo "$STATE" | jq -r '.databases.tasks.id')
+# Extract task data source id (example using jq)
+TASKS_DS=$(echo "$STATE" | jq -r '.dataSources.tasks.id')
 ```
 
 Skills should gracefully handle missing state by suggesting the user run onboarding first:

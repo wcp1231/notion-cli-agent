@@ -15,8 +15,89 @@
  */
 
 import type { getClient } from '../client.js';
-import type { Block, Page, Database, PaginatedResponse } from '../types/notion.js';
+import type { Block, Page, Database, DataSource, PropertySchema, PaginatedResponse } from '../types/notion.js';
 import { getBlockContent } from './markdown.js';
+
+// ─── Data Source Resolution ────────────────────────────────────────────────
+
+const dsCache = new Map<string, string>();
+const dsAllCache = new Map<string, string[]>();
+
+/**
+ * Resolve an ID (database or data_source) to a single data_source ID.
+ * Returns the first data_source. For querying all data_sources, use resolveAllDataSourceIds.
+ */
+export async function resolveDataSourceId(
+  client: ReturnType<typeof getClient>,
+  id: string
+): Promise<string> {
+  const cached = dsCache.get(id);
+  if (cached) return cached;
+
+  try {
+    const db = await client.get(`databases/${id}`) as Database;
+    if (db.data_sources && db.data_sources.length > 0) {
+      const dsId = db.data_sources[0].id;
+      dsCache.set(id, dsId);
+      dsAllCache.set(id, db.data_sources.map(ds => ds.id));
+      return dsId;
+    }
+  } catch {
+    // ID is likely already a data_source ID
+  }
+
+  dsCache.set(id, id);
+  return id;
+}
+
+/**
+ * Resolve a database ID to ALL its data_source IDs.
+ * For databases with multiple data sources (e.g., multiple views/sources).
+ */
+export async function resolveAllDataSourceIds(
+  client: ReturnType<typeof getClient>,
+  id: string
+): Promise<string[]> {
+  const cached = dsAllCache.get(id);
+  if (cached) return cached;
+
+  try {
+    const db = await client.get(`databases/${id}`) as Database;
+    if (db.data_sources && db.data_sources.length > 0) {
+      const ids = db.data_sources.map(ds => ds.id);
+      dsAllCache.set(id, ids);
+      dsCache.set(id, ids[0]);
+      return ids;
+    }
+  } catch {
+    // ID is likely already a data_source ID
+  }
+
+  dsAllCache.set(id, [id]);
+  return [id];
+}
+
+/**
+ * Fetch both the database container info and the data_source schema.
+ * Returns the database (title, icon, cover), the resolved data_source ID,
+ * and the properties/schema from the data_source.
+ */
+export async function getDatabaseWithDataSource(
+  client: ReturnType<typeof getClient>,
+  id: string
+): Promise<{ db: Database; dataSourceId: string; schema: Record<string, PropertySchema> }> {
+  const db = await client.get(`databases/${id}`) as Database;
+  const dataSourceId = db.data_sources?.[0]?.id;
+
+  if (!dataSourceId) {
+    // Fallback: database may have inline properties (old API compat)
+    return { db, dataSourceId: id, schema: db.properties || {} };
+  }
+
+  dsCache.set(id, dataSourceId);
+  const ds = await client.get(`data_sources/${dataSourceId}`) as DataSource;
+  return { db, dataSourceId, schema: ds.properties || {} };
+}
 
 // ─── Block Fetching ─────────────────────────────────────────────────────────
 

@@ -22,7 +22,7 @@ export function registerSearchCommand(program: Command): void {
   program
     .command('search [query]')
     .description('Search pages and databases')
-    .option('-t, --type <type>', 'Filter by type: page, database', '')
+    .option('-t, --type <type>', 'Filter by type: page, data_source (database)', '')
     .option('-s, --sort <direction>', 'Sort by last_edited_time: asc, desc', '')
     .option('-l, --limit <number>', 'Max results to return', '10')
     .option('--cursor <cursor>', 'Pagination cursor for next page')
@@ -33,7 +33,10 @@ export function registerSearchCommand(program: Command): void {
         
         const body: Record<string, unknown> = {};
         if (query) body.query = query;
-        if (options.type) body.filter = { property: 'object', value: options.type };
+        if (options.type) {
+          const filterValue = options.type === 'database' ? 'data_source' : options.type;
+          body.filter = { property: 'object', value: filterValue };
+        }
         if (options.sort) {
           body.sort = {
             direction: options.sort,

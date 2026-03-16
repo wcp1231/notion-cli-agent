@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import { getClient } from '../client.js';
-import { fetchAllBlocks } from '../utils/notion-helpers.js';
+import { fetchAllBlocks, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Block, Page } from '../types/notion.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -194,9 +194,13 @@ export function registerTemplateCommand(program: Command): void {
         const client = getClient();
         
         // Build parent
-        const parent = options.parentType === 'page'
-          ? { page_id: options.parent }
-          : { database_id: options.parent };
+        let parent: { page_id: string } | { data_source_id: string };
+        if (options.parentType === 'page') {
+          parent = { page_id: options.parent };
+        } else {
+          const resolvedId = await resolveDataSourceId(client, options.parent);
+          parent = { data_source_id: resolvedId };
+        }
         
         // Build properties
         const properties: Record<string, unknown> = {};
@@ -217,10 +221,8 @@ export function registerTemplateCommand(program: Command): void {
           // If database, get actual title prop name
           if (options.parentType === 'database') {
             try {
-              const db = await client.get(`databases/${options.parent}`) as {
-                properties: Record<string, { type: string }>;
-              };
-              for (const [name, prop] of Object.entries(db.properties)) {
+              const { schema } = await getDatabaseWithDataSource(client, options.parent);
+              for (const [name, prop] of Object.entries(schema)) {
                 if (prop.type === 'title') {
                   titleProp = name;
                   break;

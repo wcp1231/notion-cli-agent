@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { parseFilter, parseProperties } from '../utils/format.js';
 import { getPageTitle } from '../utils/notion-helpers.js';
-import type { Page, Database, PropertySchema } from '../types/notion.js';
+import type { Page, DataSource, PropertySchema } from '../types/notion.js';
 
 // Parse simple where clause: "Status=Done,Priority=High"
 function parseWhereClause(
@@ -89,37 +89,38 @@ function parseWhereClause(
 export function registerBulkCommand(program: Command): void {
   const bulk = program
     .command('bulk')
-    .description('Bulk operations on databases');
+    .description('Bulk operations on data sources');
 
   // Bulk update
   bulk
-    .command('update <database_id>')
+    .command('update <data_source_id>')
     .description('Update multiple entries matching a condition')
     .requiredOption('--where <condition>', 'Filter condition (e.g., "Status=Todo")')
     .requiredOption('--set <properties>', 'Properties to set (e.g., "Status=Done,Priority=Low")')
     .option('--dry-run', 'Show what would be updated without making changes')
     .option('--limit <number>', 'Max entries to update', '100')
     .option('--yes', 'Skip confirmation')
-    .action(async (databaseId: string, options) => {
+    .action(async (dataSourceId: string, options) => {
       try {
         const client = getClient();
-        
-        // Get database schema
-        const db = await client.get(`databases/${databaseId}`) as Database;
-        
+
+        // Get data source schema
+        const ds = await client.get(`data_sources/${dataSourceId}`) as DataSource;
+        const schema = ds.properties;
+
         // Parse where clause
-        const filter = parseWhereClause(options.where, db.properties);
-        
+        const filter = parseWhereClause(options.where, schema);
+
         if (!filter) {
           console.error('Error: Invalid --where clause');
           process.exit(1);
         }
-        
+
         // Parse set clause
         const setProperties = parseProperties(options.set.split(',').map((s: string) => s.trim()));
-        
+
         // Query matching entries
-        const result = await client.post(`databases/${databaseId}/query`, {
+        const result = await client.post(`data_sources/${dataSourceId}/query`, {
           filter,
           page_size: parseInt(options.limit, 10),
         }) as { results: Page[]; has_more: boolean };
@@ -181,29 +182,30 @@ export function registerBulkCommand(program: Command): void {
 
   // Bulk archive
   bulk
-    .command('archive <database_id>')
+    .command('archive <data_source_id>')
     .description('Archive multiple entries matching a condition')
     .requiredOption('--where <condition>', 'Filter condition (e.g., "Status=Done")')
     .option('--dry-run', 'Show what would be archived without making changes')
     .option('--limit <number>', 'Max entries to archive', '100')
     .option('--yes', 'Skip confirmation')
-    .action(async (databaseId: string, options) => {
+    .action(async (dataSourceId: string, options) => {
       try {
         const client = getClient();
-        
-        // Get database schema
-        const db = await client.get(`databases/${databaseId}`) as Database;
-        
+
+        // Get data source schema
+        const ds = await client.get(`data_sources/${dataSourceId}`) as DataSource;
+        const schema = ds.properties;
+
         // Parse where clause
-        const filter = parseWhereClause(options.where, db.properties);
-        
+        const filter = parseWhereClause(options.where, schema);
+
         if (!filter) {
           console.error('Error: Invalid --where clause');
           process.exit(1);
         }
-        
+
         // Query matching entries
-        const result = await client.post(`databases/${databaseId}/query`, {
+        const result = await client.post(`data_sources/${dataSourceId}/query`, {
           filter,
           page_size: parseInt(options.limit, 10),
         }) as { results: Page[]; has_more: boolean };
@@ -242,7 +244,7 @@ export function registerBulkCommand(program: Command): void {
         
         for (const page of result.results) {
           try {
-            await client.patch(`pages/${page.id}`, { archived: true });
+            await client.patch(`pages/${page.id}`, { in_trash: true });
             archived++;
             process.stdout.write(`\r🗑️ Archived ${archived}/${result.results.length}...`);
           } catch (error) {
@@ -260,13 +262,13 @@ export function registerBulkCommand(program: Command): void {
 
   // Bulk delete (really archive, Notion doesn't have true delete)
   bulk
-    .command('delete <database_id>')
+    .command('delete <data_source_id>')
     .description('Delete (archive) multiple entries matching a condition')
     .requiredOption('--where <condition>', 'Filter condition')
     .option('--dry-run', 'Show what would be deleted without making changes')
     .option('--limit <number>', 'Max entries to delete', '100')
     .option('--yes', 'Skip confirmation (DANGEROUS)')
-    .action(async (databaseId: string, options) => {
+    .action(async (dataSourceId: string, options) => {
       // Alias for archive
       console.log('Note: Notion does not support permanent deletion. Entries will be archived.\n');
       
@@ -274,7 +276,7 @@ export function registerBulkCommand(program: Command): void {
       const archiveCmd = bulk.commands.find(c => c.name() === 'archive');
       if (archiveCmd) {
         await archiveCmd.parseAsync([
-          'archive', databaseId,
+          'archive', dataSourceId,
           '--where', options.where,
           ...(options.dryRun ? ['--dry-run'] : []),
           ...(options.limit ? ['--limit', options.limit] : []),

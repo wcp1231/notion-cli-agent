@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import { getClient } from '../client.js';
-import { fetchAllBlocks, getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
+import { fetchAllBlocks, getPageTitle, getDbTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Block, Page, Database } from '../types/notion.js';
 
 // Clean block for duplication (remove IDs, etc.)
@@ -91,16 +91,22 @@ export function registerDuplicateCommand(program: Command): void {
         const sourceTitle = getPageTitle(sourcePage);
         
         // Determine parent
-        let parent: { database_id: string } | { page_id: string };
-        
+        let parent: { data_source_id: string } | { page_id: string };
+
         if (options.to) {
-          parent = options.parentType === 'page'
-            ? { page_id: options.to }
-            : { database_id: options.to };
+          if (options.parentType === 'page') {
+            parent = { page_id: options.to };
+          } else {
+            const resolvedId = await resolveDataSourceId(client, options.to);
+            parent = { data_source_id: resolvedId };
+          }
         } else {
           // Use same parent as source
           if (sourcePage.parent.type === 'database_id') {
-            parent = { database_id: sourcePage.parent.database_id! };
+            const resolvedId = await resolveDataSourceId(client, sourcePage.parent.database_id!);
+            parent = { data_source_id: resolvedId };
+          } else if (sourcePage.parent.type === 'data_source_id') {
+            parent = { data_source_id: sourcePage.parent.data_source_id! };
           } else {
             parent = { page_id: sourcePage.parent.page_id! };
           }
@@ -177,16 +183,16 @@ export function registerDuplicateCommand(program: Command): void {
         
         // Get source database
         console.log('Fetching source database schema...');
-        const sourceDb = await client.get(`databases/${databaseId}`) as Database;
+        const { db: sourceDb, schema: sourceSchema } = await getDatabaseWithDataSource(client, databaseId);
         const sourceTitle = getDbTitle(sourceDb);
-        
+
         // Prepare new title
         const newTitle = options.title || `Copy of ${sourceTitle}`;
-        
+
         // Clone properties (excluding computed ones)
         const newProperties: Record<string, unknown> = {};
-        
-        for (const [name, schema] of Object.entries(sourceDb.properties)) {
+
+        for (const [name, schema] of Object.entries(sourceSchema)) {
           // Skip formula and rollup as they depend on other DBs
           if (
             schema.type === 'formula' ||
@@ -295,19 +301,19 @@ export function registerDuplicateCommand(program: Command): void {
         
         // Get source database
         console.log('Fetching source database...');
-        const sourceDb = await client.get(`databases/${databaseId}`) as Database;
+        const { db: sourceDb, dataSourceId: sourceDsId, schema: sourceSchema } = await getDatabaseWithDataSource(client, databaseId);
         const sourceTitle = getDbTitle(sourceDb);
-        
+
         // Query all entries
         const entries: Page[] = [];
         let cursor: string | undefined;
-        
+
         do {
           const body: Record<string, unknown> = { page_size: 100 };
           if (cursor) body.start_cursor = cursor;
           if (options.limit && entries.length >= parseInt(options.limit, 10)) break;
-          
-          const result = await client.post(`databases/${databaseId}/query`, body) as {
+
+          const result = await client.post(`data_sources/${sourceDsId}/query`, body) as {
             results: Page[];
             has_more: boolean;
             next_cursor?: string;
@@ -339,7 +345,7 @@ export function registerDuplicateCommand(program: Command): void {
         const newTitle = options.title || `Copy of ${sourceTitle}`;
         const newProperties: Record<string, unknown> = {};
         
-        for (const [name, schema] of Object.entries(sourceDb.properties)) {
+        for (const [name, schema] of Object.entries(sourceSchema)) {
           if (['formula', 'rollup', 'relation', 'created_time', 'created_by', 
                'last_edited_time', 'last_edited_by'].includes(schema.type)) {
             continue;
@@ -400,8 +406,9 @@ export function registerDuplicateCommand(program: Command): void {
             }
             
             // Create page
+            const newDsId = await resolveDataSourceId(client, newDb.id);
             const pageData: Record<string, unknown> = {
-              parent: { database_id: newDb.id },
+              parent: { data_source_id: newDsId },
               properties: entryProps,
             };
             

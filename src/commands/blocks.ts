@@ -143,7 +143,7 @@ export function registerBlocksCommand(program: Command): void {
 
         const body: Record<string, unknown> = { children };
         if (options.after) {
-          body.after = options.after;
+          body.position = { type: 'after_block', after_block: { id: options.after } };
         }
 
         const result = await client.patch(`blocks/${blockId}/children`, body);
@@ -183,7 +183,7 @@ export function registerBlocksCommand(program: Command): void {
         }
 
         if (options.archive) {
-          body.archived = true;
+          body.in_trash = true;
         }
 
         const result = await client.patch(`blocks/${blockId}`, body);

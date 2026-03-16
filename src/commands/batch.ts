@@ -5,10 +5,9 @@
 import { Command } from 'commander';
 import { getClient, NotionClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-
 interface BatchOperation {
   op: 'get' | 'create' | 'update' | 'delete' | 'query' | 'append';
-  type: 'page' | 'database' | 'block';
+  type: 'page' | 'data_source' | 'block';
   id?: string;
   parent?: string;
   data?: Record<string, unknown>;
@@ -27,7 +26,7 @@ async function executeOperation(client: NotionClient, op: BatchOperation): Promi
   switch (op.op) {
     case 'get':
       if (op.type === 'page') return client.get(`pages/${op.id}`);
-      if (op.type === 'database') return client.get(`databases/${op.id}`);
+      if (op.type === 'data_source') return client.get(`data_sources/${op.id}`);
       if (op.type === 'block') return client.get(`blocks/${op.id}`);
       break;
 
@@ -36,33 +35,26 @@ async function executeOperation(client: NotionClient, op: BatchOperation): Promi
         return client.post('pages', {
           parent: op.data?.parent_type === 'page'
             ? { page_id: op.parent }
-            : { database_id: op.parent },
+            : { data_source_id: op.parent },
           properties: op.data?.properties || {},
           children: op.data?.children || [],
-        });
-      }
-      if (op.type === 'database') {
-        return client.post('databases', {
-          parent: { page_id: op.parent },
-          title: op.data?.title || [],
-          properties: op.data?.properties || {},
         });
       }
       break;
 
     case 'update':
       if (op.type === 'page') return client.patch(`pages/${op.id}`, op.data || {});
-      if (op.type === 'database') return client.patch(`databases/${op.id}`, op.data || {});
+      if (op.type === 'data_source') return client.patch(`data_sources/${op.id}`, op.data || {});
       if (op.type === 'block') return client.patch(`blocks/${op.id}`, op.data || {});
       break;
 
     case 'delete':
       if (op.type === 'block') return client.delete(`blocks/${op.id}`);
-      return client.patch(`pages/${op.id}`, { archived: true });
+      return client.patch(`pages/${op.id}`, { in_trash: true });
 
     case 'query':
-      if (op.type === 'database') {
-        return client.post(`databases/${op.id}/query`, op.data || {});
+      if (op.type === 'data_source') {
+        return client.post(`data_sources/${op.id}/query`, op.data || {});
       }
       break;
 

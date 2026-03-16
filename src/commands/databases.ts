@@ -1,35 +1,66 @@
 /**
- * Databases commands - get, create, update, query databases
+ * Data source commands - get, query, update data sources (and create databases)
+ *
+ * The primary entry point is `notion datasource` (alias: ds).
+ * `notion database` (alias: db) is kept as a deprecated alias.
+ *
+ * Users can pass either a data_source ID or a database ID — the CLI
+ * resolves database IDs to data_source IDs transparently.
  */
 import { Command } from 'commander';
 import { getClient } from '../client.js';
-import { formatOutput, formatDatabaseTitle, parseFilter } from '../utils/format.js';
+import { formatOutput, parseFilter } from '../utils/format.js';
+import { getDbTitle, resolveDataSourceId, resolveAllDataSourceIds, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
+import type { DataSource } from '../types/notion.js';
+
+function getItemTitle(item: { properties: Record<string, unknown> }): string {
+  for (const prop of Object.values(item.properties)) {
+    const typedProp = prop as { type: string; title?: Array<{ plain_text: string }> };
+    if (typedProp.type === 'title' && typedProp.title) {
+      return typedProp.title.map(t => t.plain_text).join('') || 'Untitled';
+    }
+  }
+  return 'Untitled';
+}
 
 export function registerDatabasesCommand(program: Command): void {
-  const databases = program
-    .command('database')
-    .alias('databases')
+  const datasource = program
+    .command('datasource')
+    .alias('ds')
+    .alias('database')
     .alias('db')
-    .description('Manage Notion databases');
+    .description('Manage data sources (accepts data_source ID or database ID)');
 
-  // Get database
-  databases
-    .command('get <database_id>')
-    .description('Retrieve a database by ID')
+  // Get data source
+  datasource
+    .command('get <id>')
+    .description('Retrieve a data source (or database) by ID')
     .option('-j, --json', 'Output raw JSON')
-    .action(async (databaseId: string, options) => {
+    .action(async (id: string, options) => {
       try {
         const client = getClient();
-        const db = await client.get(`databases/${databaseId}`);
+        const dsId = await resolveDataSourceId(client, id);
+        const ds = await client.get(`data_sources/${dsId}`) as DataSource;
+
+        // Try to get parent database title
+        let dbTitle = '';
+        if (ds.parent?.database_id) {
+          try {
+            const db = await client.get(`databases/${ds.parent.database_id}`) as { title?: { plain_text: string }[] };
+            dbTitle = db.title?.map(t => t.plain_text).join('') || '';
+          } catch { /* ignore */ }
+        }
 
         if (options.json) {
-          console.log(formatOutput(db));
+          console.log(formatOutput(ds));
         } else {
-          console.log('Database:', formatDatabaseTitle(db));
-          console.log('ID:', (db as { id: string }).id);
+          if (dbTitle) console.log('Database:', dbTitle);
+          console.log('Data Source:', dsId);
+          if (ds.parent?.database_id && ds.parent.database_id !== dsId) {
+            console.log('Database ID:', ds.parent.database_id);
+          }
           console.log('\nProperties:');
-          const props = (db as { properties: Record<string, { type: string }> }).properties;
-          for (const [name, prop] of Object.entries(props)) {
+          for (const [name, prop] of Object.entries(ds.properties)) {
             console.log(`  - ${name}: ${prop.type}`);
           }
         }
@@ -39,10 +70,10 @@ export function registerDatabasesCommand(program: Command): void {
       }
     });
 
-  // Query database
-  databases
-    .command('query <database_id>')
-    .description('Query a database')
+  // Query data source
+  datasource
+    .command('query <id>')
+    .description('Query a data source (or database)')
     .option('-f, --filter <json>', 'Filter as JSON string')
     .option('--filter-prop <property>', 'Property to filter on')
     .option('--filter-type <type>', 'Filter type: equals, contains, etc.')
@@ -53,13 +84,12 @@ export function registerDatabasesCommand(program: Command): void {
     .option('-l, --limit <number>', 'Max results', '100')
     .option('--cursor <cursor>', 'Pagination cursor')
     .option('-j, --json', 'Output raw JSON')
-    .action(async (databaseId: string, options) => {
+    .action(async (id: string, options) => {
       try {
         const client = getClient();
 
         const body: Record<string, unknown> = {};
 
-        // Handle filter
         if (options.filter) {
           body.filter = JSON.parse(options.filter);
         } else if (options.filterProp && options.filterType && options.filterValue) {
@@ -71,7 +101,6 @@ export function registerDatabasesCommand(program: Command): void {
           );
         }
 
-        // Handle sort
         if (options.sort) {
           body.sorts = [{
             property: options.sort,
@@ -82,29 +111,39 @@ export function registerDatabasesCommand(program: Command): void {
         if (options.limit) body.page_size = parseInt(options.limit, 10);
         if (options.cursor) body.start_cursor = options.cursor;
 
-        const result = await client.post(`databases/${databaseId}/query`, body);
+        const dsIds = await resolveAllDataSourceIds(client, id);
+
+        // Query all data sources and merge results
+        const allResults: Array<{ id: string; properties: Record<string, unknown> }> = [];
+        let lastHasMore = false;
+        let lastCursor: string | null = null;
+
+        for (const dsId of dsIds) {
+          const result = await client.post(`data_sources/${dsId}/query`, body) as {
+            results: Array<{ id: string; properties: Record<string, unknown> }>;
+            has_more: boolean;
+            next_cursor: string | null;
+          };
+          allResults.push(...result.results);
+          lastHasMore = result.has_more;
+          lastCursor = result.next_cursor;
+        }
 
         if (options.json) {
-          console.log(formatOutput(result));
+          console.log(formatOutput({ results: allResults, has_more: lastHasMore, next_cursor: lastCursor }));
           return;
         }
 
-        const typedResult = result as {
-          results: Array<{ id: string; properties: Record<string, unknown> }>;
-          has_more: boolean;
-          next_cursor: string | null;
-        };
+        console.log(`Found ${allResults.length} items:\n`);
 
-        console.log(`Found ${typedResult.results.length} items:\n`);
-        
-        for (const item of typedResult.results) {
+        for (const item of allResults) {
           const title = getItemTitle(item);
           console.log(`📄 ${title}`);
           console.log(`   ID: ${item.id}`);
         }
 
-        if (typedResult.has_more) {
-          console.log(`\nMore results available. Use --cursor ${typedResult.next_cursor}`);
+        if (lastHasMore) {
+          console.log(`\nMore results available. Use --cursor ${lastCursor}`);
         }
       } catch (error) {
         console.error('Error:', (error as Error).message);
@@ -112,8 +151,8 @@ export function registerDatabasesCommand(program: Command): void {
       }
     });
 
-  // Create database
-  databases
+  // Create database (still uses the databases endpoint)
+  datasource
     .command('create')
     .description('Create a new database')
     .requiredOption('--parent <page_id>', 'Parent page ID')
@@ -126,10 +165,9 @@ export function registerDatabasesCommand(program: Command): void {
         const client = getClient();
 
         const properties: Record<string, { type?: string; title?: object; [key: string]: unknown }> = {
-          Name: { title: {} }, // Default title property
+          Name: { title: {} },
         };
 
-        // Parse additional properties
         if (options.property) {
           for (const prop of options.property) {
             const [name, type] = prop.split(':');
@@ -149,14 +187,17 @@ export function registerDatabasesCommand(program: Command): void {
           body.is_inline = true;
         }
 
-        const db = await client.post('databases', body);
+        const result = await client.post('databases', body) as { id: string; url: string; data_sources?: { id: string }[] };
 
         if (options.json) {
-          console.log(formatOutput(db));
+          console.log(formatOutput(result));
         } else {
           console.log('✅ Database created');
-          console.log('ID:', (db as { id: string }).id);
-          console.log('URL:', (db as { url: string }).url);
+          console.log('ID:', result.id);
+          if (result.data_sources?.[0]) {
+            console.log('Data Source:', result.data_sources[0].id);
+          }
+          console.log('URL:', result.url);
         }
       } catch (error) {
         console.error('Error:', (error as Error).message);
@@ -164,61 +205,95 @@ export function registerDatabasesCommand(program: Command): void {
       }
     });
 
-  // Update database
-  databases
-    .command('update <database_id>')
-    .description('Update database properties')
-    .option('-t, --title <title>', 'New title')
+  // Update data source
+  datasource
+    .command('update <id>')
+    .description('Update data source schema or database title')
+    .option('-t, --title <title>', 'New database title')
     .option('--add-prop <name:type>', 'Add a property')
     .option('--remove-prop <name>', 'Remove a property')
     .option('-j, --json', 'Output raw JSON')
-    .action(async (databaseId: string, options) => {
+    .action(async (id: string, options) => {
       try {
         const client = getClient();
 
-        const body: Record<string, unknown> = {};
-
+        // Title update goes to the parent database
         if (options.title) {
-          body.title = [{ type: 'text', text: { content: options.title } }];
+          // Try to find the database ID (id might be a data_source or database)
+          let dbId = id;
+          try {
+            const ds = await client.get(`data_sources/${id}`) as DataSource;
+            if (ds.parent?.database_id) dbId = ds.parent.database_id;
+          } catch { /* id might already be a database ID */ }
+          await client.patch(`databases/${dbId}`, {
+            title: [{ type: 'text', text: { content: options.title } }],
+          });
         }
 
+        // Property changes go to the data source
         const properties: Record<string, unknown> = {};
-
         if (options.addProp) {
           const [name, type] = options.addProp.split(':');
           if (name && type) {
             properties[name] = { [type]: {} };
           }
         }
-
         if (options.removeProp) {
           properties[options.removeProp] = null;
         }
 
         if (Object.keys(properties).length > 0) {
-          body.properties = properties;
+          const dsId = await resolveDataSourceId(client, id);
+          await client.patch(`data_sources/${dsId}`, { properties });
         }
 
-        const db = await client.patch(`databases/${databaseId}`, body);
-
         if (options.json) {
-          console.log(formatOutput(db));
+          const dsId = await resolveDataSourceId(client, id);
+          const updated = await client.get(`data_sources/${dsId}`);
+          console.log(formatOutput(updated));
         } else {
-          console.log('✅ Database updated');
+          console.log('✅ Updated');
         }
       } catch (error) {
         console.error('Error:', (error as Error).message);
         process.exit(1);
       }
     });
-}
 
-function getItemTitle(item: { properties: Record<string, unknown> }): string {
-  for (const prop of Object.values(item.properties)) {
-    const typedProp = prop as { type: string; title?: Array<{ plain_text: string }> };
-    if (typedProp.type === 'title' && typedProp.title) {
-      return typedProp.title.map(t => t.plain_text).join('') || 'Untitled';
-    }
-  }
-  return 'Untitled';
+  // List data sources for a database
+  datasource
+    .command('list <database_id>')
+    .alias('ls')
+    .description('List all data sources in a database')
+    .option('-j, --json', 'Output raw JSON')
+    .action(async (databaseId: string, options) => {
+      try {
+        const client = getClient();
+        const { db } = await getDatabaseWithDataSource(client, databaseId);
+        const title = getDbTitle(db);
+
+        if (options.json) {
+          console.log(formatOutput(db.data_sources || []));
+          return;
+        }
+
+        console.log(`📊 ${title} (${db.id})\n`);
+
+        if (!db.data_sources || db.data_sources.length === 0) {
+          console.log('No data sources found.');
+          return;
+        }
+
+        for (const ds of db.data_sources) {
+          const dsDetail = await client.get(`data_sources/${ds.id}`) as DataSource;
+          const propCount = Object.keys(dsDetail.properties).length;
+          console.log(`  📋 ${ds.name || 'Unnamed'}`);
+          console.log(`     ID: ${ds.id}`);
+          console.log(`     Properties: ${propCount}`);
+        }
+      } catch (error) {
+        console.error('Error:', (error as Error).message);
+        process.exit(1);
+      }
+    });
 }

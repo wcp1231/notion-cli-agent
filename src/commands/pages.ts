@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import { getClient } from '../client.js';
 import { formatOutput, formatPageTitle, parseProperties } from '../utils/format.js';
 import { markdownToBlocks } from '../utils/markdown.js';
-import { blocksToMarkdownAsync, fetchAllBlocks, getPageTitle } from '../utils/notion-helpers.js';
+import { blocksToMarkdownAsync, fetchAllBlocks, getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Page } from '../types/notion.js';
 
 export function registerPagesCommand(program: Command): void {
@@ -67,24 +67,26 @@ export function registerPagesCommand(program: Command): void {
       try {
         const client = getClient();
 
-        const parent = options.parentType === 'page'
-          ? { page_id: options.parent }
-          : { database_id: options.parent };
+        let parent: Record<string, string>;
+        if (options.parentType === 'page') {
+          parent = { page_id: options.parent };
+        } else {
+          const resolvedParent = await resolveDataSourceId(client, options.parent);
+          parent = { data_source_id: resolvedParent };
+        }
 
         const properties: Record<string, unknown> = {};
-        
+
         // Handle title - auto-detect title property name from database schema
         if (options.title) {
           let titlePropName = options.titleProp;
-          
+
           // If not specified and parent is database, fetch schema to find title property
           if (!titlePropName && options.parentType === 'database') {
             try {
-              const db = await client.get(`databases/${options.parent}`) as {
-                properties: Record<string, { type: string }>;
-              };
+              const { schema: dbSchemaProps } = await getDatabaseWithDataSource(client, options.parent);
               // Find the property with type "title"
-              for (const [name, prop] of Object.entries(db.properties)) {
+              for (const [name, prop] of Object.entries(dbSchemaProps)) {
                 if (prop.type === 'title') {
                   titlePropName = name;
                   break;
@@ -167,14 +169,22 @@ export function registerPagesCommand(program: Command): void {
           if (!titlePropName) {
             try {
               const page = await client.get(`pages/${pageId}`) as {
-                parent: { type: string; database_id?: string };
+                parent: { type: string; database_id?: string; data_source_id?: string };
               };
-              if (page.parent.type === 'database_id' && page.parent.database_id) {
+              if ((page.parent.type === 'database_id' && page.parent.database_id) ||
+                  (page.parent.type === 'data_source_id' && page.parent.data_source_id)) {
                 detectedParentType = 'database';
-                const db = await client.get(`databases/${page.parent.database_id}`) as {
-                  properties: Record<string, { type: string }>;
-                };
-                for (const [name, prop] of Object.entries(db.properties)) {
+                let schemaProps: Record<string, { type: string }>;
+                if (page.parent.type === 'database_id' && page.parent.database_id) {
+                  const { schema } = await getDatabaseWithDataSource(client, page.parent.database_id);
+                  schemaProps = schema;
+                } else {
+                  const ds = await client.get(`data_sources/${page.parent.data_source_id}`) as {
+                    properties: Record<string, { type: string }>;
+                  };
+                  schemaProps = ds.properties || {};
+                }
+                for (const [name, prop] of Object.entries(schemaProps)) {
                   if (prop.type === 'title') {
                     titlePropName = name;
                     break;
@@ -206,9 +216,9 @@ export function registerPagesCommand(program: Command): void {
         }
 
         if (options.archive) {
-          body.archived = true;
+          body.in_trash = true;
         } else if (options.unarchive) {
-          body.archived = false;
+          body.in_trash = false;
         }
 
         if (options.icon) {
@@ -236,7 +246,7 @@ export function registerPagesCommand(program: Command): void {
     .action(async (pageId: string) => {
       try {
         const client = getClient();
-        await client.patch(`pages/${pageId}`, { archived: true });
+        await client.patch(`pages/${pageId}`, { in_trash: true });
         console.log('✅ Page archived');
       } catch (error) {
         console.error('Error:', (error as Error).message);
@@ -515,7 +525,7 @@ export function registerPagesCommand(program: Command): void {
             const chunk = newBlocks.slice(i, i + 100);
             const body: Record<string, unknown> = { children: chunk };
             if (afterBlockId) {
-              body.after = afterBlockId;
+              body.position = { type: 'after_block', after_block: { id: afterBlockId } };
             }
             const result = await client.patch(`blocks/${pageId}/children`, body) as {
               results: { id: string }[];

@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-import { getPageTitle } from '../utils/notion-helpers.js';
+import { getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface ValidationIssue {
@@ -77,23 +77,23 @@ export function registerValidateCommand(program: Command): void {
         const issues: ValidationIssue[] = [];
         
         // Get database schema
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
-        
+
         console.log(`🔍 Validating database: ${dbTitle}\n`);
-        
+
         // Determine required properties
-        const requiredProps = options.required 
+        const requiredProps = options.required
           ? options.required.split(',').map((p: string) => p.trim())
           : [];
-        
+
         // Find status and date properties
         let statusProp = '';
         let dateProp = '';
-        
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'status') statusProp = name;
-          if (schema.type === 'date' && name.toLowerCase().includes('deadline')) {
+
+        for (const [name, schemaProp] of Object.entries(schema)) {
+          if (schemaProp.type === 'status') statusProp = name;
+          if (schemaProp.type === 'date' && name.toLowerCase().includes('deadline')) {
             dateProp = name;
           }
         }
@@ -106,7 +106,7 @@ export function registerValidateCommand(program: Command): void {
           const body: Record<string, unknown> = { page_size: 100 };
           if (cursor) body.start_cursor = cursor;
           
-          const result = await client.post(`databases/${databaseId}/query`, body) as {
+          const result = await client.post(`data_sources/${dsId}/query`, body) as {
             results: Page[];
             has_more: boolean;
             next_cursor?: string;
@@ -264,7 +264,7 @@ export function registerValidateCommand(program: Command): void {
         // Property fill rates
         let totalFillRate = 0;
         let propCount = 0;
-        for (const [propName] of Object.entries(db.properties)) {
+        for (const [propName] of Object.entries(schema)) {
           let filled = 0;
           for (const entry of entries) {
             const prop = entry.properties[propName];
@@ -311,21 +311,21 @@ export function registerValidateCommand(program: Command): void {
         const client = getClient();
         
         // Get database
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
-        
+
         console.log(`🔍 Linting: ${dbTitle}\n`);
-        
+
         // Quick queries for common issues
         const checks: { name: string; filter: Record<string, unknown>; severity: string }[] = [];
-        
+
         // Find properties
         let titleProp = '';
         let statusProp = '';
-        
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'title') titleProp = name;
-          if (schema.type === 'status') statusProp = name;
+
+        for (const [name, schemaProp] of Object.entries(schema)) {
+          if (schemaProp.type === 'title') titleProp = name;
+          if (schemaProp.type === 'status') statusProp = name;
         }
         
         // Check for entries without title
@@ -339,7 +339,7 @@ export function registerValidateCommand(program: Command): void {
         
         // Check for old "in progress" items
         if (statusProp) {
-          const statusData = db.properties[statusProp].status as { options?: { name: string }[] };
+          const statusData = schema[statusProp].status as { options?: { name: string }[] };
           const inProgressStatus = statusData?.options?.find(o => 
             o.name.toLowerCase().includes('marcha') || o.name.toLowerCase().includes('progress')
           );
@@ -366,7 +366,7 @@ export function registerValidateCommand(program: Command): void {
 
         for (const check of checks) {
           try {
-            const countResult = await client.post(`databases/${databaseId}/query`, {
+            const countResult = await client.post(`data_sources/${dsId}/query`, {
               filter: check.filter,
               page_size: 100,
             }) as { results: Page[] };
@@ -386,7 +386,7 @@ export function registerValidateCommand(program: Command): void {
         }
 
         // Check for duplicate titles (requires fetching entries)
-        const allEntries = await client.post(`databases/${databaseId}/query`, {
+        const allEntries = await client.post(`data_sources/${dsId}/query`, {
           page_size: 100,
         }) as { results: Page[] };
 
@@ -426,11 +426,11 @@ export function registerValidateCommand(program: Command): void {
       try {
         const client = getClient();
         
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
-        
+
         // Query recent entries
-        const result = await client.post(`databases/${databaseId}/query`, {
+        const result = await client.post(`data_sources/${dsId}/query`, {
           page_size: 100,
           sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
         }) as { results: Page[] };
@@ -448,8 +448,8 @@ export function registerValidateCommand(program: Command): void {
         let completionRate = 0;
         let statusProp = '';
         
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'status') {
+        for (const [name, schemaProp] of Object.entries(schema)) {
+          if (schemaProp.type === 'status') {
             statusProp = name;
             break;
           }
@@ -468,7 +468,7 @@ export function registerValidateCommand(program: Command): void {
         // Property fill rates
         const fillRates: Record<string, number> = {};
         
-        for (const [propName] of Object.entries(db.properties)) {
+        for (const [propName] of Object.entries(schema)) {
           let filled = 0;
           for (const entry of entries) {
             const prop = entry.properties[propName];

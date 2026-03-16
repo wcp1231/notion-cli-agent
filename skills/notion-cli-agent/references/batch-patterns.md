@@ -18,12 +18,11 @@ Operations array: `[{ "op": "...", "type": "...", ... }]`
 
 | `op` | `type` | Required fields | Optional |
 |------|--------|-----------------|----------|
-| `get` | `page` / `database` / `block` | `id` | — |
-| `create` | `page` | `parent`, `data.title` | `data.*` for props |
-| `create` | `database` | `parent`, `data.title`, `data.properties` | — |
-| `update` | `page` / `database` / `block` | `id`, `data` | — |
+| `get` | `page` / `data_source` / `block` | `id` | — |
+| `create` | `page` | `parent` (data_source ID), `data.title` | `data.*` for props |
+| `update` | `page` / `data_source` / `block` | `id`, `data` | — |
 | `delete` | `page` / `block` | `id` | — |
-| `query` | `database` | `id` | `data.filter`, `data.limit` |
+| `query` | `data_source` | `id` | `data.filter`, `data.limit` |
 | `append` | `block` | `id`, `data.children` | — |
 
 ---
@@ -54,9 +53,9 @@ notion batch --llm --data '[
 
 ```bash
 notion batch --llm --data '[
-  {"op":"create","type":"page","parent":"<tasks_db_id>","data":{"title":"Fix login bug","Status":"Todo","Priority":"High"}},
-  {"op":"create","type":"page","parent":"<tasks_db_id>","data":{"title":"Write tests","Status":"Todo","Priority":"Medium"}},
-  {"op":"create","type":"page","parent":"<tasks_db_id>","data":{"title":"Update docs","Status":"Todo","Priority":"Low"}}
+  {"op":"create","type":"page","parent":"<ds_id>","data":{"title":"Fix login bug","Status":"Todo","Priority":"High"}},
+  {"op":"create","type":"page","parent":"<ds_id>","data":{"title":"Write tests","Status":"Todo","Priority":"Medium"}},
+  {"op":"create","type":"page","parent":"<ds_id>","data":{"title":"Update docs","Status":"Todo","Priority":"Low"}}
 ]'
 ```
 
@@ -80,8 +79,8 @@ Useful when you need context before creating:
 
 ```bash
 notion batch --llm --data '[
-  {"op":"query","type":"database","id":"<projects_db>","data":{"limit":5}},
-  {"op":"create","type":"page","parent":"<tasks_db>","data":{"title":"New task linked to project","Status":"Todo"}}
+  {"op":"query","type":"data_source","id":"<ds_id>","data":{"limit":5}},
+  {"op":"create","type":"page","parent":"<ds_id>","data":{"title":"New task","Status":"Todo"}}
 ]'
 ```
 
@@ -91,7 +90,7 @@ notion batch --llm --data '[
 
 ```bash
 # Step 1 — find items to triage
-notion find "todo unassigned" -d <tasks_db> --json | jq '.[].id'
+notion find "todo unassigned" -d <ds_id> --json | jq '.[].id'
 
 # Step 2 — batch update them
 notion batch --llm --data '[

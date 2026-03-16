@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-import { getPageTitle } from '../utils/notion-helpers.js';
+import { getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -189,8 +189,7 @@ export function registerFindCommand(program: Command): void {
         const client = getClient();
         
         // Get database schema first
-        const db = await client.get(`databases/${options.database}`) as Database;
-        const schema = db.properties;
+        const { schema } = await getDatabaseWithDataSource(client, options.database);
         
         // Parse the query
         const parsed = parseQuery(query);
@@ -308,7 +307,8 @@ export function registerFindCommand(program: Command): void {
         };
         if (filter) body.filter = filter;
         
-        const result = await client.post(`databases/${options.database}/query`, body) as {
+        const dsId = await resolveDataSourceId(client, options.database);
+        const result = await client.post(`data_sources/${dsId}/query`, body) as {
           results: Page[];
           has_more: boolean;
         };

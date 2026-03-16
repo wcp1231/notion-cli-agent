@@ -21,30 +21,31 @@ export function registerHelpAgentCommand(program: Command): void {
 
 ### 1. Discover workspace structure
 \`\`\`bash
-notion inspect ws --compact          # List all accessible databases
+notion inspect ws --compact          # List all databases and top-level pages
 notion inspect ws --json             # Full raw inventory
-notion inspect schema <db_id> --llm  # Get database schema with valid values
-notion inspect context <db_id>       # Full context for working with a database
+notion inspect schema <id> --llm    # Get data source schema with valid values
+notion inspect context <id>         # Full context for working with a data source
 \`\`\`
 
 ### 2. Search and query
 \`\`\`bash
-notion search "keyword"              # Search pages and databases
-notion db query <db_id> --limit 10   # Query database entries
-notion db query <db_id> --limit 10 --json
-notion find "overdue tasks" -d <db_id>  # Smart natural language query
+notion search "keyword"              # Search pages and data sources
+notion ds query <id> --limit 10      # Query data source entries
+notion ds query <id> --limit 10 --json
+notion ds list <db_id>               # List all data sources in a database
+notion find "overdue tasks" -d <id>  # Smart natural language query
 \`\`\`
 
 ### 3. Create entries
 \`\`\`bash
-notion page create --parent <db_id> --title "New Entry"
-notion page create --parent <db_id> --title "Task" --prop "Status=Todo" --prop "Priority=High"
+notion page create --parent <id> --title "New Entry"
+notion page create --parent <id> --title "Task" --prop "Status=Todo" --prop "Priority=High"
 \`\`\`
 
 ### 4. Update entries
 \`\`\`bash
 notion page update <page_id> --prop "Status=Done"
-notion bulk update <db_id> --where "Status=Todo" --set "Status=In Progress" --yes
+notion bulk update <ds_id> --where "Status=Todo" --set "Status=In Progress" --yes
 \`\`\`
 
 ### 5. Read page content
@@ -66,23 +67,23 @@ notion block append <page_id> --todo "Task to do"
 
 When filtering, specify --filter-prop-type for non-text properties:
 - status: --filter-prop-type status
-- select: --filter-prop-type select  
+- select: --filter-prop-type select
 - number: --filter-prop-type number
 - date: --filter-prop-type date
 - checkbox: --filter-prop-type checkbox
 
 Example:
 \`\`\`bash
-notion db query <db_id> --filter-prop "Status" --filter-type equals --filter-value "Done" --filter-prop-type status
+notion ds query <id> --filter-prop "Status" --filter-type equals --filter-value "Done" --filter-prop-type status
 \`\`\`
 
 ## AI-Specific Commands
 
 \`\`\`bash
-notion ai prompt <db_id>             # Generate optimal prompt for this database
+notion ai prompt <id>                # Generate optimal prompt for this data source
 notion ai summarize <page_id>        # Summarize page content
 notion ai extract <page_id> --schema "email,phone,date"  # Extract structured data
-notion ai suggest <db_id> "what I want to do"  # Get command suggestions
+notion ai suggest <id> "what I want to do"  # Get command suggestions
 \`\`\`
 
 ## Batch Operations (reduce tool calls)
@@ -90,7 +91,8 @@ notion ai suggest <db_id> "what I want to do"  # Get command suggestions
 \`\`\`bash
 notion batch --llm --data '[
   {"op":"get","type":"page","id":"xxx"},
-  {"op":"create","type":"page","parent":"db_id","data":{...}},
+  {"op":"create","type":"page","parent":"<ds_id>","data":{...}},
+  {"op":"query","type":"data_source","id":"<ds_id>","data":{"limit":5}},
   {"op":"update","type":"page","id":"yyy","data":{...}}
 ]'
 \`\`\`
@@ -103,18 +105,19 @@ notion batch --llm --data '[
 
 ## Tips for AI Agents
 
-1. Always run \`notion inspect context <db_id>\` first to understand database structure
+1. Always run \`notion inspect context <id>\` first to understand data source structure
 2. Property names and values must match EXACTLY (case-sensitive)
 3. Use --dry-run on bulk/batch operations before executing
 4. Status properties use "status" type, not "select"
-5. The title property name varies per database (could be "Name", "Título", "Task", etc.)
+5. The title property name varies per data source (could be "Name", "Título", "Task", etc.)
+6. Use \`notion ds list <db_id>\` to see all data sources in a database
 
 ## Get Help
 
 \`\`\`bash
 notion --help                # List all commands
 notion <command> --help      # Help for specific command
-notion ai prompt <db_id>     # Database-specific instructions
+notion ai prompt <id>        # Data source-specific instructions
 \`\`\`
 `);
     });

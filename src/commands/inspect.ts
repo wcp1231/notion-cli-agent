@@ -5,8 +5,8 @@
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-import { getDbTitle, getDbDescription } from '../utils/notion-helpers.js';
-import type { Database, PropertySchema } from '../types/notion.js';
+import { getDbTitle, getDbDescription, getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
+import type { Database, Page, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
   id: string;
@@ -81,57 +81,113 @@ export function registerInspectCommand(program: Command): void {
   inspect
     .command('workspace')
     .alias('ws')
-    .description('List all accessible databases with their schemas')
+    .description('List all accessible databases and top-level pages')
     .option('-l, --limit <number>', 'Max databases to show', '20')
     .option('-j, --json', 'Output raw JSON')
     .option('--compact', 'Compact output (names only)')
     .action(async (options) => {
       try {
         const client = getClient();
-        
-        // Search for all databases
+
+        // Search returns data_source objects; resolve to parent databases
         const result = await client.post('search', {
-          filter: { property: 'object', value: 'database' },
+          filter: { property: 'object', value: 'data_source' },
           page_size: parseInt(options.limit, 10),
-        }) as { results: Database[] };
-        
+        }) as { results: Array<{ id: string; parent?: { database_id?: string }; properties: Record<string, PropertySchema> }> };
+
+        // Deduplicate by parent database ID
+        const dbIds = [...new Set(
+          result.results
+            .map(ds => ds.parent?.database_id)
+            .filter((id): id is string => !!id)
+        )];
+
+        // Fetch actual database objects
+        const databases: Database[] = [];
+        for (const dbId of dbIds) {
+          try {
+            const db = await client.get(`databases/${dbId}`) as Database;
+            databases.push(db);
+          } catch {
+            // Skip inaccessible databases
+          }
+        }
+
+        // Also fetch top-level pages
+        const pageResult = await client.post('search', {
+          filter: { property: 'object', value: 'page' },
+          page_size: parseInt(options.limit, 10),
+        }) as { results: Page[] };
+
+        // Filter to workspace-level pages (not inside databases)
+        const topLevelPages = pageResult.results.filter(p =>
+          p.parent?.type === 'workspace'
+        );
+
         if (options.json) {
-          console.log(formatOutput(result.results));
+          console.log(formatOutput({ databases, pages: topLevelPages }));
           return;
         }
-        
-        console.log(`Found ${result.results.length} accessible database(s):\n`);
-        
-        for (const db of result.results) {
+
+        console.log(`Found ${databases.length} database(s), ${topLevelPages.length} top-level page(s):\n`);
+
+        for (const db of databases) {
           const title = getDbTitle(db);
           const desc = getDbDescription(db);
-          
+
           if (options.compact) {
             console.log(`📊 ${title} (${db.id.slice(0, 8)}...)`);
             continue;
           }
-          
+
           console.log(`📊 ${title}`);
           console.log(`   ID: ${db.id}`);
           if (desc) console.log(`   Description: ${desc}`);
-          
-          // List properties
-          const props = Object.entries(db.properties)
-            .filter(([, p]) => p.type !== 'title') // Skip title, it's obvious
-            .slice(0, 8);
-          
-          if (props.length > 0) {
-            console.log('   Properties:');
-            for (const [name, prop] of props) {
-              console.log(`     - ${name}: ${formatPropertyType(prop)}`);
-            }
-            
-            const totalProps = Object.keys(db.properties).length;
-            if (totalProps > 9) {
-              console.log(`     ... and ${totalProps - 9} more`);
+
+          // Show data sources
+          const dataSources = (db as unknown as { data_sources?: { id: string; name: string }[] }).data_sources;
+          if (dataSources && dataSources.length > 0) {
+            console.log(`   Data sources: ${dataSources.length}`);
+            for (const ds of dataSources) {
+              // Fetch data source to get its properties
+              try {
+                const dsDetail = await client.get(`data_sources/${ds.id}`) as { properties: Record<string, PropertySchema> };
+                const props = Object.entries(dsDetail.properties)
+                  .filter(([, p]) => p.type !== 'title')
+                  .slice(0, 8);
+
+                console.log(`   [${ds.name || ds.id.slice(0, 8)}] (${ds.id})`);
+                if (props.length > 0) {
+                  console.log('     Properties:');
+                  for (const [name, prop] of props) {
+                    console.log(`       - ${name}: ${formatPropertyType(prop)}`);
+                  }
+                  const totalProps = Object.keys(dsDetail.properties).length;
+                  if (totalProps > 9) {
+                    console.log(`       ... and ${totalProps - 9} more`);
+                  }
+                }
+              } catch {
+                console.log(`   [${ds.name || ds.id.slice(0, 8)}] (${ds.id})`);
+              }
             }
           }
           console.log('');
+        }
+
+        // Show top-level pages
+        if (topLevelPages.length > 0) {
+          for (const page of topLevelPages) {
+            const title = getPageTitle(page);
+            if (options.compact) {
+              console.log(`📄 ${title} (${page.id.slice(0, 8)}...)`);
+            } else {
+              console.log(`📄 ${title}`);
+              console.log(`   ID: ${page.id}`);
+              if (page.url) console.log(`   URL: ${page.url}`);
+              console.log('');
+            }
+          }
         }
       } catch (error) {
         console.error('Error:', (error as Error).message);
@@ -148,24 +204,24 @@ export function registerInspectCommand(program: Command): void {
     .action(async (databaseId: string, options) => {
       try {
         const client = getClient();
-        const db = await client.get(`databases/${databaseId}`) as Database;
-        
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
+
         if (options.json) {
           console.log(formatOutput(db));
           return;
         }
-        
+
         const title = getDbTitle(db);
         const desc = getDbDescription(db);
-        
+
         if (options.llm) {
           // Compact LLM-friendly format
           console.log(`# Database: ${title}\n`);
           console.log(`ID: ${db.id}`);
           if (desc) console.log(`Description: ${desc}`);
           console.log(`\n## Properties\n`);
-          
-          for (const [name, prop] of Object.entries(db.properties)) {
+
+          for (const [name, prop] of Object.entries(schema)) {
             const typeInfo = formatPropertyType(prop);
             console.log(`- **${name}** (${typeInfo})`);
             
@@ -208,7 +264,7 @@ export function registerInspectCommand(program: Command): void {
         if (desc) console.log(`Description: ${desc}`);
         console.log('\nProperties:\n');
         
-        for (const [name, prop] of Object.entries(db.properties)) {
+        for (const [name, prop] of Object.entries(schema)) {
           console.log(`  ${name}`);
           console.log(`    Type: ${prop.type}`);
           console.log(`    ID: ${prop.id}`);
@@ -263,12 +319,12 @@ export function registerInspectCommand(program: Command): void {
         const client = getClient();
         
         // Get database schema
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const title = getDbTitle(db);
         const desc = getDbDescription(db);
-        
+
         // Get example entries
-        const examples = await client.post(`databases/${databaseId}/query`, {
+        const examples = await client.post(`data_sources/${dsId}/query`, {
           page_size: parseInt(options.examples, 10),
         }) as { results: { id: string; properties: Record<string, unknown> }[] };
         
@@ -286,9 +342,9 @@ export function registerInspectCommand(program: Command): void {
         console.log('| Property | Type | Values |');
         console.log('|----------|------|--------|');
         
-        for (const [name, prop] of Object.entries(db.properties)) {
+        for (const [name, prop] of Object.entries(schema)) {
           let values = '-';
-          
+
           if (prop.type === 'select' || prop.type === 'multi_select') {
             const data = prop[prop.type] as { options?: SelectOption[] };
             const opts = data?.options || [];

@@ -6,7 +6,7 @@ import { getClient } from '../client.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { blocksToMarkdownSync } from '../utils/markdown.js';
-import { fetchAllBlocks, getPageTitle } from '../utils/notion-helpers.js';
+import { fetchAllBlocks, getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Block, Page, Database } from '../types/notion.js';
 
 function sanitizeFilename(name: string): string {
@@ -54,7 +54,7 @@ export function registerBackupCommand(program: Command): void {
         
         // Get database info
         console.log('Fetching database schema...');
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId: dsId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
         
         // Save schema
@@ -91,7 +91,7 @@ export function registerBackupCommand(program: Command): void {
         do {
           if (cursor) queryBody.start_cursor = cursor;
           
-          const result = await client.post(`databases/${databaseId}/query`, queryBody) as {
+          const result = await client.post(`data_sources/${dsId}/query`, queryBody) as {
             results: Page[];
             has_more: boolean;
             next_cursor?: string;

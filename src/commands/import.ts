@@ -6,6 +6,7 @@ import { getClient } from '../client.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { markdownToBlocks } from '../utils/markdown.js';
+import { resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Database, PropertySchema } from '../types/notion.js';
 
 interface FrontMatter {
@@ -216,11 +217,11 @@ export function registerImportCommand(program: Command): void {
         const client = getClient();
         
         // Get database schema
-        const db = await client.get(`databases/${options.to}`) as Database;
-        const titleProp = findTitleProperty(db.properties);
-        
+        const { db, dataSourceId, schema } = await getDatabaseWithDataSource(client, options.to);
+        const titleProp = findTitleProperty(schema);
+
         // Find markdown files
-        const basePath = options.folder 
+        const basePath = options.folder
           ? path.join(vaultPath, options.folder)
           : vaultPath;
         
@@ -278,7 +279,7 @@ export function registerImportCommand(program: Command): void {
             const title = (frontMatter.title as string) || path.basename(file, '.md');
             
             // Convert frontmatter to properties
-            const properties = frontMatterToProperties(frontMatter, db.properties, titleProp);
+            const properties = frontMatterToProperties(frontMatter, schema, titleProp);
             
             // Add title
             properties[titleProp] = {
@@ -287,7 +288,7 @@ export function registerImportCommand(program: Command): void {
             
             // Create page
             const pageData: Record<string, unknown> = {
-              parent: { database_id: options.to },
+              parent: { data_source_id: dataSourceId },
               properties,
             };
             
@@ -325,9 +326,9 @@ export function registerImportCommand(program: Command): void {
         const client = getClient();
         
         // Get database schema
-        const db = await client.get(`databases/${options.to}`) as Database;
-        const titleProp = findTitleProperty(db.properties);
-        
+        const { db: csvDb, dataSourceId: csvDsId, schema: csvSchema } = await getDatabaseWithDataSource(client, options.to);
+        const titleProp = findTitleProperty(csvSchema);
+
         // Read CSV
         const content = fs.readFileSync(filePath, 'utf-8');
         const lines = content.split('\n').filter(l => l.trim());
@@ -376,7 +377,7 @@ export function registerImportCommand(program: Command): void {
               let propName: string | null = null;
               let propSchema: PropertySchema | null = null;
               
-              for (const [schemaName, schemaProp] of Object.entries(db.properties)) {
+              for (const [schemaName, schemaProp] of Object.entries(csvSchema)) {
                 if (schemaName.toLowerCase() === header.toLowerCase()) {
                   propName = schemaName;
                   propSchema = schemaProp;
@@ -431,7 +432,7 @@ export function registerImportCommand(program: Command): void {
             }
             
             await client.post('pages', {
-              parent: { database_id: options.to },
+              parent: { data_source_id: csvDsId },
               properties,
             });
             

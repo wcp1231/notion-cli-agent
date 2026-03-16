@@ -8,7 +8,7 @@ import * as path from 'path';
 import {
   richTextToMarkdown,
 } from '../utils/markdown.js';
-import { blocksToMarkdownAsync } from '../utils/notion-helpers.js';
+import { blocksToMarkdownAsync, resolveDataSourceId } from '../utils/notion-helpers.js';
 import type { RichText, Block, Page } from '../types/notion.js';
 
 function getPageTitle(page: Page): string {
@@ -232,17 +232,18 @@ export function registerExportCommand(program: Command): void {
         }
         
         // Query database
+        const dsId = await resolveDataSourceId(client, databaseId);
         const body: Record<string, unknown> = {};
         if (options.limit) body.page_size = parseInt(options.limit, 10);
         if (options.filter) body.filter = JSON.parse(options.filter);
-        
+
         let cursor: string | undefined;
         let exported = 0;
-        
+
         do {
           if (cursor) body.start_cursor = cursor;
-          
-          const result = await client.post(`databases/${databaseId}/query`, body) as {
+
+          const result = await client.post(`data_sources/${dsId}/query`, body) as {
             results: Page[];
             has_more: boolean;
             next_cursor?: string;

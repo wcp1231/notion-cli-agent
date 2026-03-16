@@ -4,7 +4,7 @@
  */
 import { Command } from 'commander';
 import { getClient } from '../client.js';
-import { fetchAllBlocks, getPageTitle, getDbTitle, getDbDescription, getPropertyValue } from '../utils/notion-helpers.js';
+import { fetchAllBlocks, getPageTitle, getDbTitle, getDbDescription, getPropertyValue, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Block, Page, Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -250,15 +250,15 @@ export function registerAICommand(program: Command): void {
         const client = getClient();
         
         // Get database
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, dataSourceId, schema } = await getDatabaseWithDataSource(client, databaseId);
         const title = getDbTitle(db);
         const description = getDbDescription(db);
-        
+
         // Get example entries
-        const examples = await client.post(`databases/${databaseId}/query`, {
+        const examples = await client.post(`data_sources/${dataSourceId}/query`, {
           page_size: parseInt(options.examples, 10),
         }) as { results: Page[] };
-        
+
         // Analyze property usage
         const propInfo: Record<string, {
           type: string;
@@ -266,22 +266,22 @@ export function registerAICommand(program: Command): void {
           required?: boolean;
           examples: string[];
         }> = {};
-        
-        for (const [name, schema] of Object.entries(db.properties)) {
+
+        for (const [name, propSchema] of Object.entries(schema)) {
           const info: typeof propInfo[string] = {
-            type: schema.type,
+            type: propSchema.type,
             examples: [],
           };
           
           // Get options for select/status
-          if (schema.type === 'select') {
-            const opts = (schema.select as { options?: SelectOption[] })?.options || [];
+          if (propSchema.type === 'select') {
+            const opts = (propSchema.select as { options?: SelectOption[] })?.options || [];
             info.options = opts.map(o => o.name);
-          } else if (schema.type === 'multi_select') {
-            const opts = (schema.multi_select as { options?: SelectOption[] })?.options || [];
+          } else if (propSchema.type === 'multi_select') {
+            const opts = (propSchema.multi_select as { options?: SelectOption[] })?.options || [];
             info.options = opts.map(o => o.name);
-          } else if (schema.type === 'status') {
-            const opts = (schema.status as { options?: SelectOption[] })?.options || [];
+          } else if (propSchema.type === 'status') {
+            const opts = (propSchema.status as { options?: SelectOption[] })?.options || [];
             info.options = opts.map(o => o.name);
           }
           
@@ -301,8 +301,8 @@ export function registerAICommand(program: Command): void {
         
         // Find title property
         let titleProp = 'Name';
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'title') {
+        for (const [name, propSchema] of Object.entries(schema)) {
+          if (propSchema.type === 'title') {
             titleProp = name;
             break;
           }
@@ -386,18 +386,18 @@ export function registerAICommand(program: Command): void {
     .action(async (databaseId: string, description: string, _options) => {
       try {
         const client = getClient();
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { schema } = await getDatabaseWithDataSource(client, databaseId);
         const lowerDesc = description.toLowerCase();
-        
+
         // Find relevant properties
         let statusProp = '';
         let dateProp = '';
         let peopleProp = '';
-        
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'status') statusProp = name;
-          if (schema.type === 'date' && !dateProp) dateProp = name;
-          if (schema.type === 'people' && !peopleProp) peopleProp = name;
+
+        for (const [name, propSchema] of Object.entries(schema)) {
+          if (propSchema.type === 'status') statusProp = name;
+          if (propSchema.type === 'date' && !dateProp) dateProp = name;
+          if (propSchema.type === 'people' && !peopleProp) peopleProp = name;
         }
         
         console.log('# Suggested commands\n');

@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-import { getPageTitle } from '../utils/notion-helpers.js';
+import { getPageTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Page, Database, PropertySchema, Block } from '../types/notion.js';
 
 export function registerRelationsCommand(program: Command): void {
@@ -31,7 +31,7 @@ export function registerRelationsCommand(program: Command): void {
         console.log(`🔍 Finding backlinks to: ${targetTitle}\n`);
         
         // Find the parent database
-        if (targetPage.parent.type !== 'database_id' || !targetPage.parent.database_id) {
+        if (targetPage.parent.type !== 'database_id' && targetPage.parent.type !== 'data_source_id') {
           console.log('Note: Page is not in a database. Checking for relation backlinks only.\n');
         }
         
@@ -46,15 +46,17 @@ export function registerRelationsCommand(program: Command): void {
         }) as { results: Page[] };
         
         // Strategy 2: Check relation properties in the same database
-        if (targetPage.parent.database_id) {
-          const db = await client.get(`databases/${targetPage.parent.database_id}`) as Database;
-          
+        const parentDbId = targetPage.parent.database_id || targetPage.parent.data_source_id;
+        if (parentDbId) {
+          const { schema: dbSchema } = await getDatabaseWithDataSource(client, parentDbId);
+
           // Find relation properties that point to this database
-          for (const [propName, schema] of Object.entries(db.properties)) {
+          for (const [propName, schema] of Object.entries(dbSchema)) {
             if (schema.type === 'relation' && (schema.relation as { database_id?: string })?.database_id) {
               // Query for entries with relation to our page
               try {
-                const relResult = await client.post(`databases/${(schema.relation as { database_id: string }).database_id}/query`, {
+                const relDsId = await resolveDataSourceId(client, (schema.relation as { database_id: string }).database_id);
+                const relResult = await client.post(`data_sources/${relDsId}/query`, {
                   page_size: 100,
                 }) as { results: Page[] };
                 

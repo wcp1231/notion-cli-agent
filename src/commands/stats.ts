@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
-import { getDbTitle } from '../utils/notion-helpers.js';
+import { getDbTitle, resolveDataSourceId, getDatabaseWithDataSource } from '../utils/notion-helpers.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -53,25 +53,25 @@ export function registerStatsCommand(program: Command): void {
         const client = getClient();
         
         // Get database info
-        const db = await client.get(`databases/${databaseId}`) as Database;
+        const { db, schema } = await getDatabaseWithDataSource(client, databaseId);
         const title = getDbTitle(db);
-        
+
         // Find status/select properties for breakdown
         const breakdownProps: { name: string; type: string; options: string[] }[] = [];
-        
-        for (const [name, schema] of Object.entries(db.properties)) {
-          if (schema.type === 'status') {
-            const statusData = schema.status as { options?: SelectOption[] };
+
+        for (const [name, propSchema] of Object.entries(schema)) {
+          if (propSchema.type === 'status') {
+            const statusData = propSchema.status as { options?: SelectOption[] };
             breakdownProps.push({
               name,
               type: 'status',
               options: statusData?.options?.map(o => o.name) || [],
             });
-          } else if (schema.type === 'select' && 
-                     (name.toLowerCase().includes('priority') || 
+          } else if (propSchema.type === 'select' &&
+                     (name.toLowerCase().includes('priority') ||
                       name.toLowerCase().includes('type') ||
                       name.toLowerCase().includes('category'))) {
-            const selectData = schema.select as { options?: SelectOption[] };
+            const selectData = propSchema.select as { options?: SelectOption[] };
             breakdownProps.push({
               name,
               type: 'select',
@@ -83,12 +83,13 @@ export function registerStatsCommand(program: Command): void {
         // Query all entries (paginated)
         const entries: Page[] = [];
         let cursor: string | undefined;
-        
+        const dsId = await resolveDataSourceId(client, databaseId);
+
         do {
           const body: Record<string, unknown> = { page_size: 100 };
           if (cursor) body.start_cursor = cursor;
-          
-          const result = await client.post(`databases/${databaseId}/query`, body) as {
+
+          const result = await client.post(`data_sources/${dsId}/query`, body) as {
             results: Page[];
             has_more: boolean;
             next_cursor?: string;
@@ -230,7 +231,8 @@ export function registerStatsCommand(program: Command): void {
         since.setHours(0, 0, 0, 0);
         
         // Query recently edited entries
-        const result = await client.post(`databases/${databaseId}/query`, {
+        const dsId = await resolveDataSourceId(client, databaseId);
+        const result = await client.post(`data_sources/${dsId}/query`, {
           filter: {
             timestamp: 'last_edited_time',
             last_edited_time: { on_or_after: since.toISOString() },

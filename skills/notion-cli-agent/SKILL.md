@@ -1,6 +1,6 @@
 ---
 name: notion-cli-agent
-description: Use the local Notion CLI (notion-cli-agent) to query, create, update, and manage Notion pages and databases via shell. Use when interacting with Notion workspaces, querying databases, creating or updating pages, managing tasks, reading content blocks, or running bulk/batch operations on Notion data. Prefer over Notion MCP or API calls.
+description: Use the local Notion CLI (notion-cli-agent) to query, create, update, and manage Notion pages and data sources via shell. Use when interacting with Notion workspaces, querying data sources, creating or updating pages, managing tasks, reading content blocks, or running bulk/batch operations on Notion data. Prefer over Notion MCP or API calls.
 ---
 
 # notion-cli-agent
@@ -18,19 +18,19 @@ Auth: `NOTION_TOKEN` env var, or `~/.config/notion/api_key`.
 
 ## Load workspace state first
 
-If `~/.config/notion/workspace.json` exists, read it to get database IDs — no need to run `inspect` every time:
+If `~/.config/notion/workspace.json` exists, read it to get data source IDs — no need to run `inspect` every time:
 
 ```bash
 cat ~/.config/notion/workspace.json 2>/dev/null
-# extract: .databases.tasks.id, .databases.projects.id, etc.
+# extract: .dataSources.tasks.id, .dataSources.projects.id, etc.
 ```
 
 If the file is missing, suggest the user run the **notion-onboarding** skill first.
 
 ## Agent Workflow
 
-1. **Load state** (above) or `notion inspect ws --compact` / `notion inspect ws --json` to discover databases
-2. **Understand schema** — `notion inspect context <db_id>` and `notion inspect schema <db_id> --llm`
+1. **Load state** (above) or `notion inspect ws --compact` / `notion inspect ws --json` to discover data sources
+2. **Understand schema** — `notion inspect context <id>` and `notion inspect schema <id> --llm`
 3. **Query** with `--json` or `--llm` only where the command supports it
 4. **Write** with `--dry-run` first on bulk/batch ops, then confirm with user
 
@@ -38,20 +38,21 @@ If the file is missing, suggest the user run the **notion-onboarding** skill fir
 
 ### Discover
 ```bash
-notion inspect ws --compact                     # all databases, names + ids
+notion inspect ws --compact                     # all data sources + top-level pages
 notion inspect ws --json                        # full raw inventory
-notion inspect schema <db_id> --llm             # property types + valid values
-notion inspect context <db_id>                  # workflow context + examples
-notion ai prompt <db_id>                        # DB-specific agent instructions
+notion inspect schema <id> --llm               # property types + valid values
+notion inspect context <id>                    # workflow context + examples
+notion ds list <db_id>                          # list all data sources in a database
+notion ai prompt <id>                           # data source-specific agent instructions
 ```
 
 ### Query
 ```bash
 notion search "keyword" --limit 10
-notion db query <db_id> --limit 20
-notion db query <db_id> --limit 20 --json
-notion find "overdue tasks unassigned" -d <db_id> --llm   # natural language
-notion find "high priority" -d <db_id> --explain          # preview filter, don't run
+notion ds query <id> --limit 20
+notion ds query <id> --limit 20 --json
+notion find "overdue tasks unassigned" -d <id> --llm   # natural language
+notion find "high priority" -d <id> --explain          # preview filter, don't run
 ```
 
 ### Read pages
@@ -65,8 +66,8 @@ notion ai extract <page_id> --schema "email,phone,date"
 
 ### Write pages
 ```bash
-notion page create --parent <db_id> --title "Task Name"
-notion page create --parent <db_id> --title "Task" --prop "Status=Todo" --prop "Priority=High"
+notion page create --parent <id> --title "Task Name"
+notion page create --parent <id> --title "Task" --prop "Status=Todo" --prop "Priority=High"
 notion page update <page_id> --prop "Status=Done"
 ```
 
@@ -81,7 +82,8 @@ notion block append <page_id> --todo "Action item"
 ```bash
 notion batch --dry-run --data '[
   {"op":"get","type":"page","id":"<page_id>"},
-  {"op":"create","type":"page","parent":"<db_id>","data":{"title":"New"}},
+  {"op":"create","type":"page","parent":"<ds_id>","data":{"title":"New"}},
+  {"op":"query","type":"data_source","id":"<ds_id>","data":{"limit":5}},
   {"op":"update","type":"page","id":"<page_id2>","data":{"Status":"Done"}}
 ]'
 notion batch --llm --data '[...]'               # execute
@@ -89,9 +91,9 @@ notion batch --llm --data '[...]'               # execute
 
 ### Bulk & maintenance
 ```bash
-notion bulk update <db_id> --where "Status=Todo" --set "Status=In Progress" --dry-run
-notion stats overview <db_id>
-notion validate check <db_id> --check-dates --check-stale 30
+notion bulk update <ds_id> --where "Status=Todo" --set "Status=In Progress" --dry-run
+notion stats overview <id>
+notion validate check <id> --check-dates --check-stale 30
 ```
 
 ## Output flags
@@ -107,7 +109,7 @@ notion validate check <db_id> --check-dates --check-stale 30
 `--filter-prop-type` is required for non-text properties:
 
 ```bash
-notion db query <db_id> \
+notion ds query <id> \
   --filter-prop "Status" --filter-type equals \
   --filter-value "Done" --filter-prop-type status
 ```
@@ -119,9 +121,10 @@ See `references/filters.md` for full operator reference.
 ## Rules
 
 - Property names and values are **case-sensitive** — always verify with `inspect context`
-- Title property name varies per DB (`"Name"`, `"Título"`, `"Task"` — check state or schema)
+- Title property name varies per data source (`"Name"`, `"Título"`, `"Task"` — check state or schema)
 - `--dry-run` before any bulk/batch write
 - Confirm with user before destructive bulk operations
+- `notion ds` and `notion db` are aliases — both work
 
 ## References
 
@@ -134,5 +137,5 @@ See `references/filters.md` for full operator reference.
 ```bash
 notion quickstart          # full quick reference
 notion <command> --help    # per-command help
-notion ai suggest <db_id> "what I want to do"
+notion ai suggest <id> "what I want to do"
 ```

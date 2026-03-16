@@ -3,7 +3,7 @@ name: notion-onboarding
 description: >
   Discover and map a user's Notion workspace for the first time.
   Run this before any Notion workflows when no workspace state exists.
-  Identifies key databases (projects, tasks, OKRs, home page, etc.)
+  Identifies key data sources (projects, tasks, OKRs, home page, etc.)
   through guided discovery and saves them to a persistent state file
   so future interactions don't need to re-discover. Use when: first
   Notion setup, user says "set up Notion", "map my workspace",
@@ -32,38 +32,38 @@ notion user me
 
 Confirm the integration is working. Note the workspace name.
 
-## Step 2 — Discover all accessible databases
+## Step 2 — Discover all accessible data sources and pages
 
 ```bash
 notion inspect ws --compact
 notion inspect ws --json
 ```
 
-This lists all databases the integration can see. Present the list clearly to the user (name + ID).
+This lists all databases (with their data sources) and top-level pages the integration can see. Present the list clearly to the user (name + ID).
 
 ## Step 3 — Guided identification
 
-Ask the user to identify which databases correspond to each role. Be conversational — not all workspaces have all of these:
+Ask the user to identify which data sources correspond to each role. Be conversational — not all workspaces have all of these:
 
 ```
-I found these databases in your workspace:
+I found these data sources in your workspace:
 [list from step 2]
 
 Can you tell me:
-1. Which one is your main Tasks / To-do database? (where day-to-day work lives)
-2. Which one is your Projects database? (higher-level work containers)
-3. Do you have a Goals, OKRs, or Objectives database?
-4. Is there a main Home or Dashboard page (not a database) I should know about?
-5. Any other databases that are central to how you work? (e.g., CRM, Notes, Areas)
+1. Which one is your main Tasks / To-do data source? (where day-to-day work lives)
+2. Which one is your Projects data source? (higher-level work containers)
+3. Do you have a Goals, OKRs, or Objectives data source?
+4. Is there a main Home or Dashboard page (not a data source) I should know about?
+5. Any other data sources that are central to how you work? (e.g., CRM, Notes, Areas)
 ```
 
-## Step 4 — Inspect each identified database
+## Step 4 — Inspect each identified data source
 
-For each confirmed database, run:
+For each confirmed data source, run:
 
 ```bash
-notion inspect context <db_id>
-notion inspect schema <db_id> --llm
+notion inspect context <id>
+notion inspect schema <id> --llm
 ```
 
 Extract from the output:
@@ -83,13 +83,14 @@ mkdir -p ~/.config/notion
 Example minimal state:
 ```json
 {
-  "version": 1,
+  "version": 2,
   "onboardedAt": "YYYY-MM-DD",
   "updatedAt": "YYYY-MM-DD",
   "workspace": { "name": "Acme" },
-  "databases": {
+  "dataSources": {
     "tasks": {
       "id": "abc-123",
+      "databaseId": "def-456",
       "title": "Tasks",
       "titleProp": "Name",
       "statusProp": "Status",
@@ -107,6 +108,6 @@ Apply any corrections, save the final file.
 
 ## After onboarding
 
-Tell the user: "Your workspace is now mapped. Any Notion task I do will use these databases by default — no need to look up IDs. Run this onboarding again anytime to update."
+Tell the user: "Your workspace is now mapped. Any Notion task I do will use these data sources by default — no need to look up IDs. Run this onboarding again anytime to update."
 
 For full state schema see: `references/state-schema.md`
